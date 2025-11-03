@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arches Capital - World Clock</title>
+  <style>
+    :root {
+      /* Light theme aligned to the logo */
+      --bg: #faf9f6;          /* off white */
+      --panel: #ffffff;       /* white cards */
+      --muted: #7c6c42;       /* muted gold-brown for hints */
+      --text: #3a3220;        /* deep warm text */
+      --accent: #b58a3b;      /* brand gold */
+      --accent-ink: #2b2008;  /* text on gold */
+      --card: #fffefc;        /* subtle card fill */
+      --shadow: 0 10px 25px rgba(181, 138, 59, 0.18);
+      --border: 1px solid rgba(181, 138, 59, 0.25);
+    }
+
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: radial-gradient(1200px 600px at 10% -10%, rgba(181,138,59,.10), transparent 45%),
+                  radial-gradient(900px 500px at 100% 0%, rgba(181,138,59,.06), transparent 35%),
+                  var(--bg);
+      color: var(--text);
+    }
+
+    .wrap { max-width: 980px; margin: 24px auto; padding: 0 16px; }
+
+    header { text-align: center; margin: 18px 0 8px; }
+    .brand img { width: 148px; height: auto; display: block; margin: 0 auto 10px; }
+    h1 { font-size: 26px; margin: 0; letter-spacing: .2px; color: var(--accent); }
+    .sub { color: var(--muted); font-size: 14px; margin-top: 4px; }
+    .utc { margin-top: 8px; color: var(--muted); font-size: 12px; }
+
+    .panel { background: var(--panel); border: var(--border); border-radius: 14px; box-shadow: var(--shadow); }
+
+    .controls { padding: 14px; display: grid; grid-template-columns: 1fr 260px auto; gap: 10px; align-items: center; border-bottom: var(--border); }
+    .controls input, .controls select { width: 100%; padding: 10px 12px; border-radius: 10px; border: var(--border); background: #fff; color: var(--text); }
+    .controls button { padding: 10px 14px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); font-weight: 700; cursor: pointer; }
+    .controls button:active { transform: translateY(1px); }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; padding: 14px; }
+
+    .card { background: var(--card); border: var(--border); border-radius: 16px; padding: 14px; box-shadow: var(--shadow); position: relative; overflow: hidden; }
+    .city { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .city strong { font-size: 16px; }
+    .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .time { font-size: 28px; letter-spacing: .5px; margin: 10px 0 0; font-variant-numeric: tabular-nums; }
+
+    .del { position: absolute; right: 10px; top: 10px; width: 28px; height: 28px; border-radius: 8px; border: var(--border); background: rgba(181,138,59,.08); color: var(--text); cursor: pointer; }
+
+    .footer { text-align: center; color: var(--muted); font-size: 12px; padding: 8px 0 18px; }
+    .hint { color: var(--muted); font-size: 12px; }
+
+    @media (max-width: 640px) {
+      .controls { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <!-- Rename your file to logo.png or change the src below to match your filename -->
+        <img src="logo.png" alt="Arches Capital Logo" />
+      </div>
+      <h1>Arches Capital World Clock</h1>
+      <div class="sub">Track your global time zones with a clean, branded look</div>
+      <div class="utc" id="utcNow"></div>
+    </header>
+
+    <section class="panel">
+      <div class="controls">
+        <input id="cityName" placeholder="City name for display (example Casablanca)" />
+        <select id="tzSelect"></select>
+        <button id="addBtn">Add</button>
+      </div>
+      <div class="grid" id="cards"></div>
+    </section>
+
+    <div class="footer">Tip: click X to remove a city. Your list is saved in this browser.</div>
+  </div>
+
+  <script>
+    // Helpers
+    const $ = sel => document.querySelector(sel);
+    const storageKey = "worldclock.cities.v2";
+
+    // Build time zone select using the browser's IANA list when available
+    const tzSelect = $("#tzSelect");
+    const supportedTZ = (Intl.supportedValuesOf && Intl.supportedValuesOf("timeZone")) || [
+      "Africa/Casablanca","Europe/London","Europe/Paris","UTC","America/New_York","America/Chicago",
+      "America/Denver","America/Los_Angeles","America/Sao_Paulo","Europe/Berlin","Europe/Madrid","Europe/Rome",
+      "Asia/Dubai","Asia/Kolkata","Asia/Tokyo","Asia/Shanghai","Australia/Sydney"
+    ];
+    const pretty = tz => tz.replace(/_/g, " ").replace(/\//, " - ");
+    supportedTZ.forEach(tz => {
+      const opt = document.createElement("option");
+      opt.value = tz; opt.textContent = pretty(tz);
+      tzSelect.appendChild(opt);
+    });
+
+    // Initial default cities
+    const defaultCities = [
+      { name: "Casablanca", tz: "Africa/Casablanca" },
+      { name: "New York", tz: "America/New_York" },
+      { name: "London", tz: "Europe/London" },
+      { name: "Dubai", tz: "Asia/Dubai" },
+      { name: "Mumbai", tz: "Asia/Kolkata" },
+      { name: "Tokyo", tz: "Asia/Tokyo" }
+    ];
+
+    let cities = [];
+    try {
+      cities = JSON.parse(localStorage.getItem(storageKey)) || defaultCities;
+    } catch { cities = defaultCities; }
+
+    function save() { localStorage.setItem(storageKey, JSON.stringify(cities)); }
+
+    function addCity() {
+      const name = $("#cityName").value.trim() || tzSelect.value.split("/").pop().replace(/_/g, " ");
+      const tz = tzSelect.value;
+      if (!tz) return;
+      cities.push({ name, tz });
+      save();
+      $("#cityName").value = "";
+      render();
+    }
+
+    function removeCity(idx) {
+      cities.splice(idx, 1);
+      save();
+      render();
+    }
+
+    function fmtTime(date, tz) {
+      const fmt = new Intl.DateTimeFormat([], {
+        timeZone: tz,
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+        weekday: "short", day: "2-digit", month: "short"
+      });
+      return fmt.format(date);
+    }
+
+    function render() {
+      const cards = $("#cards");
+      const now = new Date();
+      $("#utcNow").textContent = "UTC " + new Intl.DateTimeFormat([], { timeZone: "UTC", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(now);
+      cards.innerHTML = cities.map(({ name, tz }, i) => `
+        <div class="card">
+          <button class="del" aria-label="Remove" onclick="removeCity(${i})">✕</button>
+          <div class="city"><strong>${name}</strong><span class="meta">${tz}</span></div>
+          <div class="time">${fmtTime(now, tz)}</div>
+        </div>
+      `).join("");
+    }
+
+    $("#addBtn").addEventListener("click", addCity);
+    $("#cityName").addEventListener("keydown", e => { if (e.key === "Enter") addCity(); });
+
+    render();
+    setInterval(render, 1000);
+  </script>
+</body>
+</html>
